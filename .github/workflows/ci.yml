@@ -52,29 +52,29 @@ jobs:
   deploy:
     needs: build-and-scan
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: SSH to Server and deploy
-        uses: appleboy/ssh-action@v1
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.KEY }}
-          script: |
-            # Set image URI and tag directly
-            IMAGE_URI="${{ secrets.IMAGE_URI}}"
-            IMAGE_TAG="${{ github.run_number }}"
-            AWS_REGION="${{ vars.AWS_REGION }}"
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-            echo "Using image: $IMAGE_URI:$IMAGE_TAG"
+      - name: Fill in the new image ID in the ECS task definition
+        run: |
+          IMAGE_URI="${{ secrets.IMAGE_URI}}"
+          IMAGE_TAG="${{ github.run_number }}"
+          sed -i "s|<IMAGE_URI>:<TAG>|$IMAGE_URI:$IMAGE_TAG|" ecs-taskdef.json
 
-            # Login to ECR on the remote host (host already has AWS credentials)
-            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$(echo $IMAGE_URI | cut -d'/' -f1)"
-
-            # Pull the Docker image
-            docker pull "$IMAGE_URI:$IMAGE_TAG"
-
-            # Stop/remove old container if exists
-            docker rm -f resume || true
-
-            # Run the new container
-            docker run -d --name resume -p 8080:5001 "$IMAGE_URI:$IMAGE_TAG"
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs-taskdef.json
+          service: ${{ vars.ECS_SERVICE }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          wait-for-service-stability: true
