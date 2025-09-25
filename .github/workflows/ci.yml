@@ -158,18 +158,19 @@ jobs:
       - name: Ensure Listener exists
         run: |
           LISTENER=$(aws elbv2 describe-listeners \
-            --load-balancer-arn $ALB_ARN \
-            --query "Listeners[?Port==`80`].ListenerArn" \
-            --output text)
+          --load-balancer-arn $ALB_ARN \
+          --query 'Listeners[?Port==`80`].ListenerArn' \
+          --output text)
 
           if [ -z "$LISTENER" ]; then
-            echo "Creating Listener..."
-            aws elbv2 create-listener \
-              --load-balancer-arn $ALB_ARN \
-              --protocol HTTP \
-              --port 80 \
-              --default-actions Type=forward,TargetGroupArn=$TG_ARN
+          echo "Creating Listener..."
+          aws elbv2 create-listener \
+          --load-balancer-arn $ALB_ARN \
+          --protocol HTTP \
+          --port 80 \
+          --default-actions Type=forward,TargetGroupArn=$TG_ARN
           fi
+
 
       - name: Ensure ECS service exists
         run: |
