@@ -87,11 +87,20 @@ jobs:
             echo "Cluster already exists. Skipping creation."
           fi
 
+      - name: Register ECS task definition
+        run: |
+          TASK_DEF_JSON="ecs-taskdef.json"
+          REGISTERED_TASK=$(aws ecs register-task-definition \
+            --cli-input-json file://$TASK_DEF_JSON \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text)
+          echo "REGISTERED_TASK=$REGISTERED_TASK" >> $GITHUB_ENV
+          echo "Registered task definition: $REGISTERED_TASK"
+
       - name: Ensure ECS service exists
         run: |
           CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
           SERVICE_NAME="${{ vars.ECS_SERVICE }}"
-          TASK_DEF="ecs-taskdef.json"
 
           SERVICE_EXISTS=$(aws ecs describe-services \
             --cluster $CLUSTER_NAME \
@@ -104,10 +113,10 @@ jobs:
             aws ecs create-service \
               --cluster $CLUSTER_NAME \
               --service-name $SERVICE_NAME \
-              --task-definition $TASK_DEF \
+              --task-definition $REGISTERED_TASK \
               --desired-count 1 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[subnet-12345,subnet-67890],securityGroups=[sg-12345],assignPublicIp=ENABLED}" \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-012c6dbdfd7a7d6ae,subnet-04d36462c4a91be64],securityGroups=[sg-0a4a620052ab02e74],assignPublicIp=ENABLED}" \
               --deployment-controller "type=ECS"
           else
             echo "Service already exists. Skipping creation."
