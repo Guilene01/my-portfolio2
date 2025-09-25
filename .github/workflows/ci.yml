@@ -74,7 +74,6 @@ jobs:
       - name: Ensure ECS cluster exists
         run: |
           CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
-
           CLUSTER_EXISTS=$(aws ecs describe-clusters \
             --clusters $CLUSTER_NAME \
             --query "clusters[0].status" \
@@ -97,6 +96,81 @@ jobs:
           echo "REGISTERED_TASK=$REGISTERED_TASK" >> $GITHUB_ENV
           echo "Registered task definition: $REGISTERED_TASK"
 
+      - name: Detect VPC from subnets
+        run: |
+          SUBNETS="subnet-012c6dbdfd7a7d6ae subnet-04d36462c4a91be64"
+          VPC_ID=$(aws ec2 describe-subnets \
+            --subnet-ids $SUBNETS \
+            --query "Subnets[0].VpcId" \
+            --output text)
+          echo "Detected VPC ID: $VPC_ID"
+          echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
+
+      - name: Ensure ALB exists
+        run: |
+          ALB_NAME="my-app-alb"
+
+          ALB_ARN=$(aws elbv2 describe-load-balancers \
+            --names $ALB_NAME \
+            --query "LoadBalancers[0].LoadBalancerArn" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$ALB_ARN" ]; then
+            echo "Creating ALB..."
+            ALB_ARN=$(aws elbv2 create-load-balancer \
+              --name $ALB_NAME \
+              --subnets subnet-012c6dbdfd7a7d6ae subnet-04d36462c4a91be64 \
+              --security-groups sg-0a4a620052ab02e74 \
+              --scheme internet-facing \
+              --type application \
+              --query "LoadBalancers[0].LoadBalancerArn" \
+              --output text)
+          fi
+          echo "ALB ARN: $ALB_ARN"
+          echo "ALB_ARN=$ALB_ARN" >> $GITHUB_ENV
+
+      - name: Ensure Target Group exists
+        run: |
+          TG_NAME="my-app-tg"
+          PORT=80
+
+          TG_ARN=$(aws elbv2 describe-target-groups \
+            --names $TG_NAME \
+            --query "TargetGroups[0].TargetGroupArn" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$TG_ARN" ]; then
+            echo "Creating Target Group..."
+            TG_ARN=$(aws elbv2 create-target-group \
+              --name $TG_NAME \
+              --protocol HTTP \
+              --port $PORT \
+              --vpc-id $VPC_ID \
+              --health-check-protocol HTTP \
+              --health-check-path / \
+              --target-type ip \
+              --query "TargetGroups[0].TargetGroupArn" \
+              --output text)
+          fi
+          echo "Target Group ARN: $TG_ARN"
+          echo "TG_ARN=$TG_ARN" >> $GITHUB_ENV
+
+      - name: Ensure Listener exists
+        run: |
+          LISTENER=$(aws elbv2 describe-listeners \
+            --load-balancer-arn $ALB_ARN \
+            --query "Listeners[?Port==`80`].ListenerArn" \
+            --output text)
+
+          if [ -z "$LISTENER" ]; then
+            echo "Creating Listener..."
+            aws elbv2 create-listener \
+              --load-balancer-arn $ALB_ARN \
+              --protocol HTTP \
+              --port 80 \
+              --default-actions Type=forward,TargetGroupArn=$TG_ARN
+          fi
+
       - name: Ensure ECS service exists
         run: |
           CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
@@ -117,6 +191,7 @@ jobs:
               --desired-count 1 \
               --launch-type FARGATE \
               --network-configuration "awsvpcConfiguration={subnets=[subnet-012c6dbdfd7a7d6ae,subnet-04d36462c4a91be64],securityGroups=[sg-0a4a620052ab02e74],assignPublicIp=ENABLED}" \
+              --load-balancers "targetGroupArn=$TG_ARN,containerName=my-container,containerPort=80" \
               --deployment-controller "type=ECS"
           else
             echo "Service already exists. Skipping creation."
