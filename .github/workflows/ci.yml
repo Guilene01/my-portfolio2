@@ -203,4 +203,4 @@ jobs:
           task-definition: ecs-taskdef.json
           service: ${{ vars.ECS_SERVICE }}
           cluster: ${{ vars.ECS_CLUSTER }}
-          wait-for-service-stability: true
+          wait-for-service-stability: false
