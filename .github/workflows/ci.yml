@@ -27,7 +27,7 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          IMAGE_URI="${{ secrets.IMAGE_URI}}"
+          IMAGE_URI="${{ secrets.IMAGE_URI }}"
           IMAGE_TAG="${{ github.run_number }}"
           docker build -t $IMAGE_URI:$IMAGE_TAG .
 
@@ -43,7 +43,7 @@ jobs:
 
       - name: Push Docker Image to ECR
         run: |
-          IMAGE_URI="${{ secrets.IMAGE_URI}}"
+          IMAGE_URI="${{ secrets.IMAGE_URI }}"
           IMAGE_TAG="${{ github.run_number }}"
           docker push $IMAGE_URI:$IMAGE_TAG
           docker tag $IMAGE_URI:$IMAGE_TAG $IMAGE_URI:latest
@@ -67,9 +67,51 @@ jobs:
 
       - name: Fill in the new image ID in the ECS task definition
         run: |
-          IMAGE_URI="${{ secrets.IMAGE_URI}}"
+          IMAGE_URI="${{ secrets.IMAGE_URI }}"
           IMAGE_TAG="${{ github.run_number }}"
           sed -i "s|<IMAGE_URI>:<TAG>|$IMAGE_URI:$IMAGE_TAG|" ecs-taskdef.json
+
+      - name: Ensure ECS cluster exists
+        run: |
+          CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
+
+          CLUSTER_EXISTS=$(aws ecs describe-clusters \
+            --clusters $CLUSTER_NAME \
+            --query "clusters[0].status" \
+            --output text)
+
+          if [ "$CLUSTER_EXISTS" == "None" ] || [ -z "$CLUSTER_EXISTS" ]; then
+            echo "Cluster does not exist. Creating cluster..."
+            aws ecs create-cluster --cluster-name $CLUSTER_NAME
+          else
+            echo "Cluster already exists. Skipping creation."
+          fi
+
+      - name: Ensure ECS service exists
+        run: |
+          CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
+          SERVICE_NAME="${{ vars.ECS_SERVICE }}"
+          TASK_DEF="ecs-taskdef.json"
+
+          SERVICE_EXISTS=$(aws ecs describe-services \
+            --cluster $CLUSTER_NAME \
+            --services $SERVICE_NAME \
+            --query "services[0].status" \
+            --output text)
+
+          if [ "$SERVICE_EXISTS" == "None" ] || [ -z "$SERVICE_EXISTS" ]; then
+            echo "Service does not exist. Creating service..."
+            aws ecs create-service \
+              --cluster $CLUSTER_NAME \
+              --service-name $SERVICE_NAME \
+              --task-definition $TASK_DEF \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-12345,subnet-67890],securityGroups=[sg-12345],assignPublicIp=ENABLED}" \
+              --deployment-controller "type=ECS"
+          else
+            echo "Service already exists. Skipping creation."
+          fi
 
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
