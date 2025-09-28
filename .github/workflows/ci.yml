@@ -132,7 +132,7 @@ jobs:
       - name: Ensure Target Group exists
         run: |
           TG_NAME="my-app-tg"
-          PORT=80
+          PORT=5001
 
           TG_ARN=$(aws elbv2 describe-target-groups \
             --names $TG_NAME \
@@ -182,30 +182,4 @@ jobs:
             --query "services[0].status" \
             --output text)
 
-          if [ "$SERVICE_EXISTS" == "None" ] || [ -z "$SERVICE_EXISTS" ]; then
-            echo "Service does not exist. Creating service with 2 tasks..."
-            aws ecs create-service \
-              --cluster $CLUSTER_NAME \
-              --service-name $SERVICE_NAME \
-              --task-definition $REGISTERED_TASK \
-              --desired-count 2 \
-              --launch-type FARGATE \
-              --network-configuration 'awsvpcConfiguration={subnets=["subnet-012c6dbdfd7a7d6ae","subnet-04d36462c4a91be64"],securityGroups=["sg-0a4a620052ab02e74"],assignPublicIp="ENABLED"}' \
-              --load-balancers 'targetGroupArn='"$TG_ARN"',containerName="my-container",containerPort=80' \
-              --deployment-controller type=ECS
-          else
-            echo "Service exists. Updating desired count to 2 tasks..."
-            aws ecs update-service \
-              --cluster $CLUSTER_NAME \
-              --service $SERVICE_NAME \
-              --task-definition $REGISTERED_TASK \
-              --desired-count 2
-          fi
-
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ecs-taskdef.json
-          service: ${{ vars.ECS_SERVICE }}
-          cluster: ${{ vars.ECS_CLUSTER }}
-          wait-for-service-stability: false
+          if [ "$SERVICE_EXISTS" == "None" ] || [ -z "$SERVICE_EXISTS"_]()_]()
