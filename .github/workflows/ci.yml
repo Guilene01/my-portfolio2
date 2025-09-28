@@ -96,19 +96,10 @@ jobs:
           echo "REGISTERED_TASK=$REGISTERED_TASK" >> $GITHUB_ENV
           echo "Registered task definition: $REGISTERED_TASK"
 
-      - name: Detect VPC from subnets
-        run: |
-          SUBNETS=("subnet-012c6dbdfd7a7d6ae" "subnet-04d36462c4a91be64")
-          VPC_ID=$(aws ec2 describe-subnets \
-            --subnet-ids "${SUBNETS[@]}" \
-            --query "Subnets[0].VpcId" \
-            --output text)
-          echo "Detected VPC ID: $VPC_ID"
-          echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
-
       - name: Ensure ALB exists
         run: |
           ALB_NAME="my-app-alb"
+          SUBNETS="subnet-012c6dbdfd7a7d6ae subnet-04d36462c4a91be64"
 
           ALB_ARN=$(aws elbv2 describe-load-balancers \
             --names "$ALB_NAME" \
@@ -119,20 +110,23 @@ jobs:
             echo "Creating ALB..."
             ALB_ARN=$(aws elbv2 create-load-balancer \
               --name "$ALB_NAME" \
-              --subnets "${SUBNETS[@]}" \
-              --security-groups "sg-0a4a620052ab02e74" \
+              --subnets $SUBNETS \
+              --security-groups sg-0a4a620052ab02e74 \
               --scheme internet-facing \
               --type application \
               --query "LoadBalancers[0].LoadBalancerArn" \
               --output text)
           fi
-          echo "ALB ARN: $ALB_ARN"
           echo "ALB_ARN=$ALB_ARN" >> $GITHUB_ENV
 
       - name: Ensure Target Group exists
         run: |
           TG_NAME="my-app-tg"
           PORT=5001
+          VPC_ID=$(aws ec2 describe-subnets \
+            --subnet-ids subnet-012c6dbdfd7a7d6ae subnet-04d36462c4a91be64 \
+            --query "Subnets[0].VpcId" \
+            --output text)
 
           TG_ARN=$(aws elbv2 describe-target-groups \
             --names "$TG_NAME" \
@@ -152,7 +146,6 @@ jobs:
               --query "TargetGroups[0].TargetGroupArn" \
               --output text)
           fi
-          echo "Target Group ARN: $TG_ARN"
           echo "TG_ARN=$TG_ARN" >> $GITHUB_ENV
 
       - name: Ensure Listener exists
@@ -175,7 +168,6 @@ jobs:
         run: |
           CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
           SERVICE_NAME="${{ vars.ECS_SERVICE }}"
-
           SERVICE_EXISTS=$(aws ecs describe-services \
             --cluster "$CLUSTER_NAME" \
             --services "$SERVICE_NAME" \
@@ -190,7 +182,7 @@ jobs:
               --task-definition "$REGISTERED_TASK" \
               --desired-count 2 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS[0]},${SUBNETS[1]}],securityGroups=[sg-0a4a620052ab02e74],assignPublicIp=ENABLED}" \
+              --network-configuration "awsvpcConfiguration={subnets=[subnet-012c6dbdfd7a7d6ae,subnet-04d36462c4a91be64],securityGroups=[sg-0a4a620052ab02e74],assignPublicIp=ENABLED}" \
               --load-balancers "targetGroupArn=$TG_ARN,containerName=resume,containerPort=5001" \
               --deployment-controller type=ECS
           else
