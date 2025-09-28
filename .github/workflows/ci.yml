@@ -163,16 +163,15 @@ jobs:
           --output text)
 
           if [ -z "$LISTENER" ]; then
-          echo "Creating Listener..."
-          aws elbv2 create-listener \
-          --load-balancer-arn $ALB_ARN \
-          --protocol HTTP \
-          --port 80 \
-          --default-actions Type=forward,TargetGroupArn=$TG_ARN
+            echo "Creating Listener..."
+            aws elbv2 create-listener \
+              --load-balancer-arn $ALB_ARN \
+              --protocol HTTP \
+              --port 80 \
+              --default-actions Type=forward,TargetGroupArn=$TG_ARN
           fi
 
-
-      - name: Ensure ECS service exists
+      - name: Ensure ECS service exists or update
         run: |
           CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
           SERVICE_NAME="${{ vars.ECS_SERVICE }}"
@@ -189,13 +188,18 @@ jobs:
               --cluster $CLUSTER_NAME \
               --service-name $SERVICE_NAME \
               --task-definition $REGISTERED_TASK \
-              --desired-count 2 \                                           
+              --desired-count 2 \
               --launch-type FARGATE \
-              --network-configuration "awsvpcConfiguration={subnets=[subnet-012c6dbdfd7a7d6ae,subnet-04d36462c4a91be64],securityGroups=[sg-0a4a620052ab02e74],assignPublicIp=ENABLED}" \
-              --load-balancers "targetGroupArn=$TG_ARN,containerName=my-container,containerPort=80" \
-              --deployment-controller "type=ECS"
+              --network-configuration 'awsvpcConfiguration={subnets=["subnet-012c6dbdfd7a7d6ae","subnet-04d36462c4a91be64"],securityGroups=["sg-0a4a620052ab02e74"],assignPublicIp="ENABLED"}' \
+              --load-balancers 'targetGroupArn='"$TG_ARN"',containerName="my-container",containerPort=80' \
+              --deployment-controller type=ECS
           else
-            echo "Service already exists. Skipping creation."
+            echo "Service already exists. Updating service to 2 tasks..."
+            aws ecs update-service \
+              --cluster $CLUSTER_NAME \
+              --service $SERVICE_NAME \
+              --task-definition $REGISTERED_TASK \
+              --desired-count 2
           fi
 
       - name: Deploy to ECS
