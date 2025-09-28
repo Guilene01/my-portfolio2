@@ -147,7 +147,6 @@ jobs:
               --query "TargetGroups[0].TargetGroupArn" \
               --output text)
           else
-            # Update health check to port 5001
             aws elbv2 modify-target-group \
               --target-group-arn "$TG_ARN" \
               --health-check-port $PORT \
@@ -156,7 +155,7 @@ jobs:
           fi
           echo "TG_ARN=$TG_ARN" >> $GITHUB_ENV
 
-      - name: Ensure Listener exists
+      - name: Ensure Listener exists (ALB port 80)
         run: |
           LISTENER=$(aws elbv2 describe-listeners \
             --load-balancer-arn "$ALB_ARN" \
@@ -164,7 +163,7 @@ jobs:
             --output text)
 
           if [ -z "$LISTENER" ]; then
-            echo "Creating Listener..."
+            echo "Creating Listener on port 80..."
             aws elbv2 create-listener \
               --load-balancer-arn "$ALB_ARN" \
               --protocol HTTP \
