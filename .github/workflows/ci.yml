@@ -74,16 +74,16 @@ jobs:
       - name: Ensure ECS cluster exists
         run: |
           CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
-          CLUSTER_EXISTS=$(aws ecs describe-clusters \
+          CLUSTER_STATUS=$(aws ecs describe-clusters \
             --clusters $CLUSTER_NAME \
             --query "clusters[0].status" \
-            --output text)
+            --output text 2>/dev/null || echo "None")
 
-          if [ "$CLUSTER_EXISTS" == "None" ] || [ -z "$CLUSTER_EXISTS" ]; then
-            echo "Cluster does not exist. Creating cluster..."
+          if [ "$CLUSTER_STATUS" == "None" ] || [ "$CLUSTER_STATUS" == "INACTIVE" ]; then
+            echo "Cluster does not exist or is inactive. Creating cluster..."
             aws ecs create-cluster --cluster-name $CLUSTER_NAME
           else
-            echo "Cluster already exists. Skipping creation."
+            echo "Cluster already active. Skipping creation."
           fi
 
       - name: Register ECS task definition
@@ -171,7 +171,7 @@ jobs:
               --default-actions Type=forward,TargetGroupArn=$TG_ARN
           fi
 
-      - name: Ensure ECS service exists or update
+      - name: Ensure ECS service exists or update to 2 tasks
         run: |
           CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
           SERVICE_NAME="${{ vars.ECS_SERVICE }}"
@@ -183,7 +183,7 @@ jobs:
             --output text)
 
           if [ "$SERVICE_EXISTS" == "None" ] || [ -z "$SERVICE_EXISTS" ]; then
-            echo "Service does not exist. Creating service..."
+            echo "Service does not exist. Creating service with 2 tasks..."
             aws ecs create-service \
               --cluster $CLUSTER_NAME \
               --service-name $SERVICE_NAME \
@@ -194,7 +194,7 @@ jobs:
               --load-balancers 'targetGroupArn='"$TG_ARN"',containerName="my-container",containerPort=80' \
               --deployment-controller type=ECS
           else
-            echo "Service already exists. Updating service to 2 tasks..."
+            echo "Service exists. Updating desired count to 2 tasks..."
             aws ecs update-service \
               --cluster $CLUSTER_NAME \
               --service $SERVICE_NAME \
