@@ -119,7 +119,7 @@ jobs:
           fi
           echo "ALB_ARN=$ALB_ARN" >> $GITHUB_ENV
 
-      - name: Ensure Target Group exists
+      - name: Ensure Target Group exists (port 5001)
         run: |
           TG_NAME="my-app-tg"
           PORT=5001
@@ -141,10 +141,18 @@ jobs:
               --port $PORT \
               --vpc-id "$VPC_ID" \
               --health-check-protocol HTTP \
+              --health-check-port $PORT \
               --health-check-path / \
               --target-type ip \
               --query "TargetGroups[0].TargetGroupArn" \
               --output text)
+          else
+            # Update health check to port 5001
+            aws elbv2 modify-target-group \
+              --target-group-arn "$TG_ARN" \
+              --health-check-port $PORT \
+              --health-check-protocol HTTP \
+              --health-check-path /
           fi
           echo "TG_ARN=$TG_ARN" >> $GITHUB_ENV
 
