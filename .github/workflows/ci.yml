@@ -189,7 +189,7 @@ jobs:
               --cluster $CLUSTER_NAME \
               --service-name $SERVICE_NAME \
               --task-definition $REGISTERED_TASK \
-              --desired-count 1 \
+              --desired-count 2 \                                                 // Adjust desired count as needed
               --launch-type FARGATE \
               --network-configuration "awsvpcConfiguration={subnets=[subnet-012c6dbdfd7a7d6ae,subnet-04d36462c4a91be64],securityGroups=[sg-0a4a620052ab02e74],assignPublicIp=ENABLED}" \
               --load-balancers "targetGroupArn=$TG_ARN,containerName=my-container,containerPort=80" \
