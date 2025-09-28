@@ -75,13 +75,13 @@ jobs:
         run: |
           CLUSTER_NAME="${{ vars.ECS_CLUSTER }}"
           CLUSTER_STATUS=$(aws ecs describe-clusters \
-            --clusters $CLUSTER_NAME \
+            --clusters "$CLUSTER_NAME" \
             --query "clusters[0].status" \
             --output text 2>/dev/null || echo "None")
 
           if [ "$CLUSTER_STATUS" == "None" ] || [ "$CLUSTER_STATUS" == "INACTIVE" ]; then
             echo "Cluster does not exist or is inactive. Creating cluster..."
-            aws ecs create-cluster --cluster-name $CLUSTER_NAME
+            aws ecs create-cluster --cluster-name "$CLUSTER_NAME"
           else
             echo "Cluster already active. Skipping creation."
           fi
@@ -98,9 +98,9 @@ jobs:
 
       - name: Detect VPC from subnets
         run: |
-          SUBNETS="subnet-012c6dbdfd7a7d6ae subnet-04d36462c4a91be64"
+          SUBNETS=("subnet-012c6dbdfd7a7d6ae" "subnet-04d36462c4a91be64")
           VPC_ID=$(aws ec2 describe-subnets \
-            --subnet-ids $SUBNETS \
+            --subnet-ids "${SUBNETS[@]}" \
             --query "Subnets[0].VpcId" \
             --output text)
           echo "Detected VPC ID: $VPC_ID"
@@ -111,16 +111,16 @@ jobs:
           ALB_NAME="my-app-alb"
 
           ALB_ARN=$(aws elbv2 describe-load-balancers \
-            --names $ALB_NAME \
+            --names "$ALB_NAME" \
             --query "LoadBalancers[0].LoadBalancerArn" \
             --output text 2>/dev/null || echo "")
 
           if [ -z "$ALB_ARN" ]; then
             echo "Creating ALB..."
             ALB_ARN=$(aws elbv2 create-load-balancer \
-              --name $ALB_NAME \
-              --subnets subnet-012c6dbdfd7a7d6ae subnet-04d36462c4a91be64 \
-              --security-groups sg-0a4a620052ab02e74 \
+              --name "$ALB_NAME" \
+              --subnets "${SUBNETS[@]}" \
+              --security-groups "sg-0a4a620052ab02e74" \
               --scheme internet-facing \
               --type application \
               --query "LoadBalancers[0].LoadBalancerArn" \
@@ -135,17 +135,17 @@ jobs:
           PORT=5001
 
           TG_ARN=$(aws elbv2 describe-target-groups \
-            --names $TG_NAME \
+            --names "$TG_NAME" \
             --query "TargetGroups[0].TargetGroupArn" \
             --output text 2>/dev/null || echo "")
 
           if [ -z "$TG_ARN" ]; then
             echo "Creating Target Group..."
             TG_ARN=$(aws elbv2 create-target-group \
-              --name $TG_NAME \
+              --name "$TG_NAME" \
               --protocol HTTP \
               --port $PORT \
-              --vpc-id $VPC_ID \
+              --vpc-id "$VPC_ID" \
               --health-check-protocol HTTP \
               --health-check-path / \
               --target-type ip \
@@ -158,17 +158,17 @@ jobs:
       - name: Ensure Listener exists
         run: |
           LISTENER=$(aws elbv2 describe-listeners \
-          --load-balancer-arn $ALB_ARN \
-          --query 'Listeners[?Port==`80`].ListenerArn' \
-          --output text)
+            --load-balancer-arn "$ALB_ARN" \
+            --query 'Listeners[?Port==`80`].ListenerArn' \
+            --output text)
 
           if [ -z "$LISTENER" ]; then
             echo "Creating Listener..."
             aws elbv2 create-listener \
-              --load-balancer-arn $ALB_ARN \
+              --load-balancer-arn "$ALB_ARN" \
               --protocol HTTP \
               --port 80 \
-              --default-actions Type=forward,TargetGroupArn=$TG_ARN
+              --default-actions Type=forward,TargetGroupArn="$TG_ARN"
           fi
 
       - name: Ensure ECS service exists or update to 2 tasks
@@ -177,9 +177,35 @@ jobs:
           SERVICE_NAME="${{ vars.ECS_SERVICE }}"
 
           SERVICE_EXISTS=$(aws ecs describe-services \
-            --cluster $CLUSTER_NAME \
-            --services $SERVICE_NAME \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
             --query "services[0].status" \
             --output text)
 
-          if [ "$SERVICE_EXISTS" == "None" ] || [ -z "$SERVICE_EXISTS"_]()_]()
+          if [ "$SERVICE_EXISTS" == "None" ] || [ -z "$SERVICE_EXISTS" ]; then
+            echo "Service does not exist. Creating service with 2 tasks..."
+            aws ecs create-service \
+              --cluster "$CLUSTER_NAME" \
+              --service-name "$SERVICE_NAME" \
+              --task-definition "$REGISTERED_TASK" \
+              --desired-count 2 \
+              --launch-type FARGATE \
+              --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS[0]},${SUBNETS[1]}],securityGroups=[sg-0a4a620052ab02e74],assignPublicIp=ENABLED}" \
+              --load-balancers "targetGroupArn=$TG_ARN,containerName=resume,containerPort=5001" \
+              --deployment-controller type=ECS
+          else
+            echo "Service exists. Updating desired count to 2 tasks..."
+            aws ecs update-service \
+              --cluster "$CLUSTER_NAME" \
+              --service "$SERVICE_NAME" \
+              --task-definition "$REGISTERED_TASK" \
+              --desired-count 2
+          fi
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ecs-taskdef.json
+          service: ${{ vars.ECS_SERVICE }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          wait-for-service-stability: false
